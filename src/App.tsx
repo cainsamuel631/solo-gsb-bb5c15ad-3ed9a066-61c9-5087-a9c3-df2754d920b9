@@ -61,6 +61,7 @@ import { AnnotationForm } from './components/AnnotationForm'
 import { ConflictRuleEditor } from './components/ConflictRuleEditor'
 import { TagRenameEditor } from './components/TagRenameEditor'
 import { badgeColor } from './lib/segments'
+import { buildReviewReport, downloadHtmlFile } from './lib/report'
 
 type PopoverState =
   | { kind: 'create'; range: { start: number; end: number }; rect: ViewRect }
@@ -849,6 +850,26 @@ export default function App() {
     setActiveCoverage(null)
   }
 
+  // ---------- 审阅报告 ----------
+
+  /**
+   * 生成并下载自包含 HTML 审阅报告：
+   * 直接以当前 doc 为快照读取（不调用 setDoc、不写 localStorage），
+   * 冲突 / 覆盖结果与界面上的口径完全一致。
+   */
+  const downloadReviewReport = () => {
+    if (!doc.text) return
+    const report = buildReviewReport({
+      title: doc.title,
+      text: doc.text,
+      annotations: doc.annotations,
+      conflictRules: doc.conflictRules,
+      ignoredConflicts: doc.ignoredConflicts,
+      coverageTags: doc.coverageTags,
+    })
+    downloadHtmlFile(report.filename, report.html)
+  }
+
   // ---------- 渲染 ----------
 
   const editingAnnotation = popover?.kind === 'edit'
@@ -1069,6 +1090,7 @@ export default function App() {
             onBulkApply={applyBulkTags}
             tagCount={allTags.length}
             allTags={allTags}
+            onDownloadReport={downloadReviewReport}
           />
         </main>
       )}

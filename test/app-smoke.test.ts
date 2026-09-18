@@ -32,6 +32,28 @@ const React = (await import('react')).default
 const { createRoot } = await import('react-dom/client')
 const { default: App } = await import('../src/App')
 
+// 高负载机器上 React 调度与保存副作用可能晚于固定 100ms 定时器；
+// 统一用「轮询直到断言成立」代替裸 setTimeout，避免环境敏感的偶发失败。
+async function waitFor(
+  check: () => boolean,
+  { timeout = 8000, interval = 25 }: { timeout?: number; interval?: number } = {},
+): Promise<void> {
+  const start = Date.now()
+  // 先让出事件循环，触发 React 渲染与 useEffect
+  await new Promise<void>((r) => setTimeout(r, 0))
+  while (Date.now() - start < timeout) {
+    if (check()) return
+    await new Promise<void>((r) => setTimeout(r, interval))
+  }
+  // 最后再判定一次，不成立则抛出
+  assert.ok(check(), '等待条件超时未满足')
+}
+
+/** 重新挂载后等待界面渲染出关键内容 */
+async function waitMounted(el: ParentNode, token: string): Promise<void> {
+  await waitFor(() => (el.textContent ?? '').includes(token) || el.innerHTML.includes(token))
+}
+
 const container = document.getElementById('root')!
 const root = createRoot(container)
 
@@ -39,8 +61,9 @@ await new Promise<void>((resolve) => {
   root.render(
     React.createElement(React.StrictMode, null, React.createElement(App)),
   )
-  setTimeout(resolve, 100)
+  setTimeout(resolve, 0)
 })
+await waitMounted(container, '原文锚点标注台')
 
 const html = container.innerHTML
 assert.ok(html.includes('原文锚点标注台'), '顶栏标题应渲染')
@@ -98,7 +121,7 @@ await new Promise<void>((resolve) => {
   root2.render(
     React.createElement(React.StrictMode, null, React.createElement(App)),
   )
-  setTimeout(resolve, 100)
+  setTimeout(resolve, 400)
 })
 
 const html2 = container2.innerHTML
@@ -191,7 +214,7 @@ await new Promise<void>((resolve) => {
   root3.render(
     React.createElement(React.StrictMode, null, React.createElement(App)),
   )
-  setTimeout(resolve, 100)
+  setTimeout(resolve, 400)
 })
 
 const html3 = container3.innerHTML
@@ -256,7 +279,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
 
   await new Promise<void>((resolve) => {
     r.render(React.createElement(React.StrictMode, null, React.createElement(App)))
-    setTimeout(resolve, 100)
+    setTimeout(resolve, 400)
   })
 
   const clickButton = (text: string) => {
@@ -269,7 +292,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
   }
 
   clickButton('标签重命名')
-  await new Promise<void>((resolve) => setTimeout(resolve, 50))
+  await new Promise<void>((resolve) => setTimeout(resolve, 150))
 
   // 选择源标签 + 填写目标标签
   const select = c.querySelector('.rename-fields select') as HTMLSelectElement
@@ -284,7 +307,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
   setValue.call(input, '褒奖')
   input.dispatchEvent(new window.Event('input', { bubbles: true }))
 
-  await new Promise<void>((resolve) => setTimeout(resolve, 50))
+  await new Promise<void>((resolve) => setTimeout(resolve, 150))
   const previewHtml = c.innerHTML
   assert.ok(previewHtml.includes('受影响标注'), '应展示受影响标注')
   assert.ok(previewHtml.includes('褒奖 ⇄ 反面'), '预览应列出替换后的规则')
@@ -304,9 +327,9 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
   const input2 = c.querySelector('.rename-fields input') as HTMLInputElement
   setValue.call(input2, '褒奖')
   input2.dispatchEvent(new window.Event('input', { bubbles: true }))
-  await new Promise<void>((resolve) => setTimeout(resolve, 50))
+  await new Promise<void>((resolve) => setTimeout(resolve, 150))
   clickButton('确认重命名')
-  await new Promise<void>((resolve) => setTimeout(resolve, 50))
+  await new Promise<void>((resolve) => setTimeout(resolve, 150))
 
   const afterApply = JSON.parse(localStorage.getItem('anchor-annotation-console:v1')!)
   assert.deepStrictEqual(afterApply.annotations[0].tags, ['褒奖', '重点'])
@@ -387,7 +410,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
 
   await new Promise<void>((resolve) => {
     cr.render(React.createElement(React.StrictMode, null, React.createElement(App)))
-    setTimeout(resolve, 100)
+    setTimeout(resolve, 400)
   })
 
   const html0 = cc.innerHTML
@@ -401,7 +424,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
   ) as HTMLButtonElement
   assert.ok(chip, '应出现标签选择按钮 #X')
   chip.click()
-  await new Promise<void>((resolve) => setTimeout(resolve, 50))
+  await new Promise<void>((resolve) => setTimeout(resolve, 150))
 
   const html1 = cc.innerHTML
   assert.ok(html1.includes('缺口'), '应显示缺口结果')
@@ -419,12 +442,12 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
   const overlapMain = cc.querySelector('.cov-item-overlap .cov-main') as HTMLButtonElement
   assert.ok(overlapMain, '应存在重叠结果卡片')
   overlapMain.click()
-  await new Promise<void>((resolve) => setTimeout(resolve, 50))
+  await new Promise<void>((resolve) => setTimeout(resolve, 150))
   assert.ok(cc.innerHTML.includes('cov-active'), '点击结果后应高亮对应区间')
 
   // 取消选择标签 → 结果清空、持久化同步
   chip.click()
-  await new Promise<void>((resolve) => setTimeout(resolve, 50))
+  await new Promise<void>((resolve) => setTimeout(resolve, 150))
   assert.ok(!cc.innerHTML.includes('cov-item'), '取消全部标签后问题清空')
   const saved2 = JSON.parse(localStorage.getItem('anchor-annotation-console:v1')!)
   assert.deepStrictEqual(saved2.coverageTags, [])
@@ -466,7 +489,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
 
   await new Promise<void>((resolve) => {
     r2.render(React.createElement(React.StrictMode, null, React.createElement(App)))
-    setTimeout(resolve, 100)
+    setTimeout(resolve, 400)
   })
 
   // 选集中含「旧标签」，区间 [0,5) 覆盖、[5,10) 缺口
@@ -480,7 +503,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
     btn.click()
   }
   clickButton('标签重命名')
-  await new Promise<void>((resolve) => setTimeout(resolve, 50))
+  await new Promise<void>((resolve) => setTimeout(resolve, 150))
   const select = c2.querySelector('.rename-fields select') as HTMLSelectElement
   select.value = '旧标签'
   select.dispatchEvent(new window.Event('change', { bubbles: true }))
@@ -491,9 +514,9 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
   )!.set!
   setValue.call(input, '新标签')
   input.dispatchEvent(new window.Event('input', { bubbles: true }))
-  await new Promise<void>((resolve) => setTimeout(resolve, 50))
+  await new Promise<void>((resolve) => setTimeout(resolve, 150))
   clickButton('确认重命名')
-  await new Promise<void>((resolve) => setTimeout(resolve, 50))
+  await new Promise<void>((resolve) => setTimeout(resolve, 150))
 
   const after = JSON.parse(localStorage.getItem('anchor-annotation-console:v1')!)
   assert.deepStrictEqual(after.coverageTags, ['新标签'], '覆盖标签集应跟随重命名')
@@ -555,7 +578,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
 
   await new Promise<void>((resolve) => {
     r.render(React.createElement(React.StrictMode, null, React.createElement(App)))
-    setTimeout(resolve, 100)
+    setTimeout(resolve, 400)
   })
 
   const clickButton = (text: string) => {
@@ -567,7 +590,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
     return btn!
   }
   const saved = () => JSON.parse(localStorage.getItem('anchor-annotation-console:v1')!)
-  const wait = () => new Promise<void>((resolve) => setTimeout(resolve, 50))
+  const wait = () => new Promise<void>((resolve) => setTimeout(resolve, 150))
   const doRename = async (source: string, target: string) => {
     clickButton('标签重命名')
     await wait()
@@ -707,7 +730,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
 
   await new Promise<void>((resolve) => {
     sr.render(React.createElement(React.StrictMode, null, React.createElement(App)))
-    setTimeout(resolve, 100)
+    setTimeout(resolve, 400)
   })
 
   const clickButton = (text: string) => {
@@ -726,7 +749,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
     Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, v)
     el.dispatchEvent(new window.Event('input', { bubbles: true }))
   }
-  const wait = () => new Promise<void>((resolve) => setTimeout(resolve, 50))
+  const wait = () => new Promise<void>((resolve) => setTimeout(resolve, 150))
   const saved = () => JSON.parse(localStorage.getItem('anchor-annotation-console:v1')!)
 
   assert.ok(cs.innerHTML.includes('抽样复核'), '应渲染抽样复核分区')
@@ -776,7 +799,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
   const sr2 = createRoot(cs2)
   await new Promise<void>((resolve) => {
     sr2.render(React.createElement(React.StrictMode, null, React.createElement(App)))
-    setTimeout(resolve, 100)
+    setTimeout(resolve, 400)
   })
   const order1 = cards.map((c) => c.querySelector('.sample-quote')?.textContent)
   const order2 = [...cs2.querySelectorAll('.sample-item .sample-quote')].map((c) => c.textContent)
@@ -831,7 +854,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
   const sr3 = createRoot(cs3)
   await new Promise<void>((resolve) => {
     sr3.render(React.createElement(React.StrictMode, null, React.createElement(App)))
-    setTimeout(resolve, 100)
+    setTimeout(resolve, 400)
   })
   const afterChange = saved()
   assert.ok(!afterChange.sampleReviews.some((r: { annotationId: string }) => r.annotationId === 'sp_b'),
@@ -925,7 +948,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
 
   await new Promise<void>((resolve) => {
     dr.render(React.createElement(React.StrictMode, null, React.createElement(App)))
-    setTimeout(resolve, 100)
+    setTimeout(resolve, 400)
   })
 
   const findButton = (text: string) =>
@@ -943,7 +966,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
     Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, v)
     el.dispatchEvent(new window.Event('input', { bubbles: true }))
   }
-  const wait = () => new Promise<void>((resolve) => setTimeout(resolve, 50))
+  const wait = () => new Promise<void>((resolve) => setTimeout(resolve, 150))
 
   assert.ok(cd.innerHTML.includes('训练集划分导出'), '应渲染训练集划分导出分区')
   clickButton('训练集划分') // 顶栏按钮（仅校验可点击/滚动不抛错）
@@ -1068,7 +1091,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
   const dr2 = createRoot(cd2)
   await new Promise<void>((resolve) => {
     dr2.render(React.createElement(React.StrictMode, null, React.createElement(App)))
-    setTimeout(resolve, 100)
+    setTimeout(resolve, 400)
   })
   const inputs2 = [...cd2.querySelectorAll('.split-percent-input')] as HTMLInputElement[]
   setNativeValue(inputs2[0], '80')
@@ -1108,7 +1131,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
   const dr3 = createRoot(cd3)
   await new Promise<void>((resolve) => {
     dr3.render(React.createElement(React.StrictMode, null, React.createElement(App)))
-    setTimeout(resolve, 100)
+    setTimeout(resolve, 400)
   })
   const inputs3 = [...cd3.querySelectorAll('.split-percent-input')] as HTMLInputElement[]
   setNativeValue(inputs3[0], '80')
@@ -1178,7 +1201,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
 
   await new Promise<void>((resolve) => {
     br.render(React.createElement(React.StrictMode, null, React.createElement(App)))
-    setTimeout(resolve, 100)
+    setTimeout(resolve, 400)
   })
 
   const section = () => bc.querySelector('.bulk-section') as HTMLElement
@@ -1195,7 +1218,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
     Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(el, v)
     el.dispatchEvent(new window.Event('input', { bubbles: true }))
   }
-  const wait = () => new Promise<void>((resolve) => setTimeout(resolve, 50))
+  const wait = () => new Promise<void>((resolve) => setTimeout(resolve, 150))
   const saved = () => JSON.parse(localStorage.getItem('anchor-annotation-console:v1')!)
 
   // 初始：匹配全部 4 条
@@ -1326,7 +1349,7 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
   const br2 = createRoot(bc2)
   await new Promise<void>((resolve) => {
     br2.render(React.createElement(React.StrictMode, null, React.createElement(App)))
-    setTimeout(resolve, 100)
+    setTimeout(resolve, 400)
   })
   const reparsed2 = JSON.parse(localStorage.getItem('anchor-annotation-console:v1')!)
   assert.deepStrictEqual(
@@ -1343,6 +1366,137 @@ console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染�
   br2.unmount()
   bc.remove()
   bc2.remove()
+}
+
+// 审阅报告：侧栏按钮基于当前快照下载自包含 HTML，不修改本地数据；文件名含标题与日期
+{
+  const repText = '甲乙丙丁戊己庚辛壬癸'
+  const repDoc = {
+    title: '报告测试文档',
+    text: repText,
+    updatedAt: Date.now(),
+    annotations: [
+      {
+        id: 'rep_a',
+        quote: repText.slice(0, 3),
+        start: 0,
+        end: 3,
+        note: '报告备注',
+        tags: ['正面'],
+        status: 'bound',
+        createdAt: 1,
+        updatedAt: 1,
+        contextBefore: '',
+        contextAfter: '',
+      },
+      {
+        id: 'rep_b',
+        quote: repText.slice(2, 5),
+        start: 2,
+        end: 5,
+        note: '',
+        tags: ['反面'],
+        status: 'bound',
+        createdAt: 1,
+        updatedAt: 1,
+        contextBefore: '',
+        contextAfter: '',
+      },
+      {
+        id: 'rep_p',
+        quote: '消失的引文ZZZ',
+        start: 0,
+        end: 0,
+        note: '',
+        tags: [],
+        status: 'pending',
+        createdAt: 1,
+        updatedAt: 1,
+        contextBefore: '',
+        contextAfter: '',
+        pendingReason: '原文中已找不到该引文，需要手动重新选择',
+      },
+    ],
+    conflictRules: [{ id: 'rep_r1', tagA: '正面', tagB: '反面', createdAt: 1 }],
+    ignoredConflicts: [],
+    coverageTags: ['正面'],
+  }
+  localStorage.setItem('anchor-annotation-console:v1', JSON.stringify(repDoc))
+  const rc = document.createElement('div')
+  rc.id = 'rootrep'
+  document.body.appendChild(rc)
+  const rr = createRoot(rc)
+
+  await new Promise<void>((resolve) => {
+    rr.render(React.createElement(React.StrictMode, null, React.createElement(App)))
+    setTimeout(resolve, 400)
+  })
+
+  const sideHtml = rc.innerHTML
+  assert.ok(sideHtml.includes('审阅报告'), '侧栏应渲染审阅报告分区')
+  assert.ok(sideHtml.includes('生成并下载 HTML 报告'), '应有下载按钮')
+  // 侧栏内联汇总：标注 3、待处理 1、冲突 1、覆盖问题 1（[3,10) 缺口）
+  const summary = rc.querySelector('.report-summary')!.textContent!
+  assert.ok(/标注\s*3/.test(summary))
+  assert.ok(/待处理\s*1/.test(summary))
+  assert.ok(/冲突\s*1/.test(summary))
+  assert.ok(/覆盖问题\s*1/.test(summary))
+
+  // 捕获下载：Blob 内容 + 锚点 download 文件名
+  const NativeBlob2 = window.Blob
+  const captured: { content: string; filename: string }[] = []
+  const CaptureBlob = function CaptureBlob(
+    parts: BlobPart[] | undefined,
+    opts?: BlobPropertyBag,
+  ) {
+    captured.push({ content: parts ? parts.map(String).join('') : '', filename: '' })
+    return new NativeBlob2(parts as BlobPart[], opts)
+  } as unknown as typeof Blob
+  ;(window as unknown as { Blob: typeof Blob }).Blob = CaptureBlob
+  ;(globalThis as unknown as { Blob: typeof Blob }).Blob = CaptureBlob
+  ;(window.URL as unknown as { createObjectURL: () => string }).createObjectURL = () =>
+    'blob:mock/report'
+  ;(window.URL as unknown as { revokeObjectURL: () => void }).revokeObjectURL = () => {}
+  const nativeClick = window.HTMLElement.prototype.click
+  window.HTMLElement.prototype.click = function click(this: HTMLElement) {
+    if (this.tagName === 'A' && this.getAttribute('download')) {
+      captured[captured.length - 1]!.filename = this.getAttribute('download')!
+      return
+    }
+    return nativeClick.call(this)
+  }
+
+  const before = localStorage.getItem('anchor-annotation-console:v1')!
+  ;([...rc.querySelectorAll('button')].find(
+    (b) => b.textContent?.trim() === '生成并下载 HTML 报告',
+  ) as HTMLButtonElement).click()
+  await new Promise<void>((resolve) => setTimeout(resolve, 150))
+
+  assert.strictEqual(captured.length, 1, '点击应产生一个下载 Blob')
+  const reportHtml = captured[0]!.content
+  assert.ok(reportHtml.startsWith('<!doctype html>'), '下载内容应为完整 HTML 文档')
+  assert.ok(reportHtml.includes('<style>'), '报告应内嵌样式（自包含）')
+  assert.ok(reportHtml.includes('报告测试文档'), '报告应含文档标题')
+  assert.ok(reportHtml.includes('报告备注'), '报告应含标注备注')
+  assert.ok(reportHtml.includes('rep-hl-conflict'), '报告应渲染冲突交叠高亮')
+  assert.ok(reportHtml.includes('消失的引文ZZZ'), '报告应列出待处理标注')
+  // 文件名：审阅报告_<标题>_<YYYY-MM-DD>.html
+  assert.match(
+    captured[0]!.filename,
+    new RegExp(`^审阅报告_报告测试文档_\\d{4}-\\d{2}-\\d{2}\\.html$`),
+    `文件名应含标题与日期：${captured[0]!.filename}`,
+  )
+  // 不修改本地数据
+  assert.strictEqual(
+    localStorage.getItem('anchor-annotation-console:v1'),
+    before,
+    '生成报告不得修改本地数据',
+  )
+
+  window.HTMLElement.prototype.click = nativeClick
+  rr.unmount()
+  rc.remove()
+  console.log('  ✓ 审阅报告：侧栏入口、HTML 下载、内容齐全、文件名规范且本地数据不变')
 }
 
 // 旧版数据（无 conflictRules / ignoredConflicts 字段）应无损加载
@@ -1363,7 +1517,7 @@ await new Promise<void>((resolve) => {
   root4.render(
     React.createElement(React.StrictMode, null, React.createElement(App)),
   )
-  setTimeout(resolve, 100)
+  setTimeout(resolve, 400)
 })
 
 const html4 = container4.innerHTML

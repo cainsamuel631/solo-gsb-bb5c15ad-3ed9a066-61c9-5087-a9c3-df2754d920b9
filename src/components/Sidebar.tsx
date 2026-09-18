@@ -78,6 +78,8 @@ interface Props {
   tagCount: number
   /** 当前全部标签（标注使用 + 规则引用），供抽样配置表单列出 */
   allTags: string[]
+  /** 生成并下载自包含 HTML 审阅报告（使用当前文档快照，不修改本地数据） */
+  onDownloadReport: () => void
 }
 
 /** 覆盖问题的稳定键：类型 + 起点（审计结果按起点唯一排列） */
@@ -472,6 +474,9 @@ export const Sidebar = forwardRef<HTMLElement, Props>(function Sidebar(props, se
   const activeConflicts = props.conflicts.filter((c) => !c.ignored)
   const ignoredConflicts = props.conflicts.filter((c) => c.ignored)
   const annById = new Map(props.annotations.map((a) => [a.id, a]))
+  const pendingReportCount = props.annotations.filter((a) => a.status === 'pending').length
+  const coverageIssueTotal =
+    props.coverageResult.gapCount + props.coverageResult.overlapCount
   // 批量操作筛选用：仅当前标注中实际使用的标签（标签重命名 / 删除后随之更新）
   const annotationTagSet = new Set<string>()
   props.annotations.forEach((a) => a.tags.forEach((t) => annotationTagSet.add(t)))
@@ -479,6 +484,40 @@ export const Sidebar = forwardRef<HTMLElement, Props>(function Sidebar(props, se
 
   return (
     <aside className="sidebar">
+      <section className="side-section">
+        <h2 className="side-heading">审阅报告</h2>
+        <p className="side-hint">
+          按<strong>当前文档快照</strong>生成并下载一个自包含 HTML 报告：开头汇总
+          <strong>标注总数 / 待处理 / 冲突 / 覆盖问题</strong>，正文按原文位置渲染已绑定标注的
+          <strong>高亮、引文、标签与备注</strong>，并列出全部待处理标注与冲突双方。
+          报告在浏览器本地生成，<strong>不会修改本地数据</strong>，可离线打开与打印。
+        </p>
+        <ul className="report-summary">
+          <li>
+            标注 <strong>{props.annotations.length}</strong>
+          </li>
+          <li className={pendingReportCount > 0 ? 'report-summary-warn' : ''}>
+            待处理 <strong>{pendingReportCount}</strong>
+          </li>
+          <li className={activeConflicts.length > 0 ? 'report-summary-warn' : ''}>
+            冲突 <strong>{activeConflicts.length}</strong>
+          </li>
+          <li className={coverageIssueTotal > 0 ? 'report-summary-warn' : ''}>
+            覆盖问题 <strong>{coverageIssueTotal}</strong>
+          </li>
+        </ul>
+        <button
+          type="button"
+          className="btn btn-primary report-download-btn"
+          onClick={props.onDownloadReport}
+          disabled={!props.text}
+          title="生成自包含 HTML 审阅报告并下载（文件名含文档标题与当天日期）"
+        >
+          生成并下载 HTML 报告
+        </button>
+        {!props.text && <p className="side-hint">粘贴原文后即可生成报告。</p>}
+      </section>
+
       {pending.length > 0 && (
         <section className="side-section">
           <h2 className="side-heading side-heading-pending">
