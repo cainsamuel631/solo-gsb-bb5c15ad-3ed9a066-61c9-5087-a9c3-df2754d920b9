@@ -18,6 +18,7 @@ import type { SampleQueueResult } from '../lib/sampling'
 import { SnapshotSection } from './SnapshotSection'
 import { SamplingSection } from './SamplingSection'
 import { DatasetSplitSection } from './DatasetSplitSection'
+import { ReportSection } from './ReportSection'
 import { BulkSection } from './BulkSection'
 
 interface Props {
@@ -543,6 +544,15 @@ export const Sidebar = forwardRef<HTMLElement, Props>(function Sidebar(props, se
         text={props.text}
         annotations={props.annotations}
         sectionRef={props.datasetSplitSectionRef}
+      />
+
+      <ReportSection
+        title={props.title}
+        text={props.text}
+        annotations={props.annotations}
+        conflicts={props.conflicts}
+        coverageResult={props.coverageResult}
+        coverageTags={props.coverageTags}
       />
 
       <section className="side-section" ref={sectionRef as React.Ref<HTMLElement>}>
